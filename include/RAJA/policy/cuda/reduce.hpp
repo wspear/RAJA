@@ -750,8 +750,8 @@ struct ReduceAtomic_Data {
       device = device_mempool_type::getInstance().template malloc<T>(1);
       device_count = device_zeroed_mempool_type::getInstance().template malloc<unsigned int>(1);
       tidVal = device_zeroed_mempool_type::getInstance().template malloc<T>(256); // Eventually pass in template arg BLOCK_SIZE
-      //tally_or_val_ptr.val_ptr = tally_or_val_ptr.list->new_value(currentStream());
-      tally_or_val_ptr.list->new_value(currentStream());
+      tally_or_val_ptr.val_ptr = tally_or_val_ptr.list->new_value(currentStream());
+      //tally_or_val_ptr.list->new_value(currentStream());
       { //diag
         auto n = tally_or_val_ptr.list->begin();
         auto end = tally_or_val_ptr.list->end();
