@@ -44,3 +44,10 @@
 raja_add_executable(
   NAME example-raja-pi
   SOURCES pi.cpp)
+raja_add_executable(
+  NAME fixedArrayReducer
+  SOURCES fixedArrayReducer.cpp)
+raja_add_executable(
+  NAME reducerArray
+  SOURCES reducerArray.cpp)
+

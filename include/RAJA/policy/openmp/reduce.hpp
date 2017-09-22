@@ -129,6 +129,7 @@ public:
       : Base(init_val, identity_),
         data(std::make_shared<std::vector<T>>(omp_get_max_threads(), identity_))
   {
+    fprintf(stderr,"ReduceOMPOrdered constructor :  identity %f  : data_size %d\n",Base::identity,data->size());
   }
 
   ~ReduceOMPOrdered()
@@ -140,11 +141,13 @@ public:
   T get_combined() const
   {
     if (Base::my_data != Base::identity) {
+      fprintf(stderr,"in get_combined my_data != Base::identity : Base::my_data %f : Base::identity %f\n", Base::my_data,Base::identity);
       Reduce{}((*data)[omp_get_thread_num()], Base::my_data);
       Base::my_data = Base::identity;
     }
 
     T res = Base::identity;
+    fprintf(stderr,"calling reduce{}(res, (*data)[i] for %d elements\n",data->size());
     for (size_t i = 0; i < data->size(); ++i) {
       Reduce{}(res, (*data)[i]);
     }

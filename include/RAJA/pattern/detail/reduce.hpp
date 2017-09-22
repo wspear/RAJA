@@ -46,6 +46,7 @@
 
 #include "RAJA/util/Operators.hpp"
 #include "RAJA/util/types.hpp"
+#include <cxxabi.h>
 
 #define RAJA_DECLARE_REDUCER(OP, POL, COMBINER)               \
   template <typename T>                                       \
@@ -183,9 +184,16 @@ public:
   //! compiler-generated move assignment
   BaseReduce &operator=(BaseReduce &&) = default;
 
-  constexpr BaseReduce(T init_val, T identity_ = Reduce::identity())
+  //constexpr BaseReduce(T init_val, T identity_ = Reduce::identity())
+  BaseReduce(T init_val, T identity_ = Reduce::identity())
+
       : c{init_val, identity_}
   {
+    char *realname;
+    int status;
+    const std::type_info& r1 = typeid(Combiner_t);
+    realname = abi::__cxa_demangle(r1.name(), 0, 0, &status);
+    fprintf(stderr,"Type Combiner = %s\n",realname);
   }
 
   void combine(T const &other) const { c.combine(other); }

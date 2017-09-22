@@ -204,6 +204,8 @@ T block_reduce(T val)
 
   T temp = val;
 
+  //printf("block_reduce  id %d : temp %f\n",threadId,temp);
+
   if (numThreads % WARP_SIZE == 0) {
 
     // reduce each warp
@@ -280,6 +282,7 @@ bool grid_reduce(T& val,
                  + (blockDim.x * blockDim.y) * threadIdx.z;
 
   T temp = block_reduce<Combiner>(val);
+  printf("thread %d in grid reduce is calling block reduce for %f\n",threadId,temp);
 
   // one thread per block writes to device_mem
   bool lastBlock = false;
@@ -300,6 +303,7 @@ bool grid_reduce(T& val,
     temp = Combiner::identity();
 
     for (int i = threadId; i < numBlocks; i += numThreads) {
+      printf("lastBlock accum at %d block : val %f\n",i,device_mem.get(i));
       Combiner{}(temp, device_mem.get(i));
     }
 
@@ -308,6 +312,7 @@ bool grid_reduce(T& val,
     // one thread returns value
     if (threadId == 0) {
       val = temp;
+      printf("grid_reduce sets val to %f\n",val);
     }
   }
 
@@ -340,6 +345,7 @@ bool grid_reduce_atomic(T& val,
   }
 
   T temp = block_reduce<Combiner>(val);
+  //printf("thread %d in grid reduce is calling block reduce for %f %f\n",threadId,temp,val);
 
   // one thread per block performs atomic on device_mem
   bool lastBlock = false;
@@ -347,6 +353,7 @@ bool grid_reduce_atomic(T& val,
     // thread waits for device_mem to be initialized
     while(static_cast<volatile unsigned int*>(device_count)[0] < 2u);
     __threadfence();
+    printf("combining temp = %f from numblocks %d\n",temp,numBlocks);
     RAJA::reduce::cuda::atomic<Combiner>{}(device_mem[0], temp);
     __threadfence();
     // increment counter, (wraps back to zero if old count == wrap_around)
@@ -356,6 +363,7 @@ bool grid_reduce_atomic(T& val,
     // last block gets value from device_mem
     if (lastBlock) {
       val = device_mem[0];
+      printf("grid_reduce_atomic sets val to %f\n",val);
     }
   }
 
@@ -528,6 +536,7 @@ public:
     Node* n = cuda::pinned_mempool_type::getInstance().template malloc<Node>(1);
     n->next = sn->node_list;
     sn->node_list = n;
+    printf("new_value begin %p : end %p\n",begin(),end());
     return &n->value;
   }
 
@@ -624,6 +633,7 @@ struct Reduce_Data {
   bool setupForDevice()
   {
     bool act = !device.allocated() && setupReducers();
+    printf("called setupForDevice with act = %d\n",act);
     if (act) {
       dim3 gridDim = currentGridDim();
       size_t numBlocks = gridDim.x * gridDim.y * gridDim.z;
@@ -632,6 +642,7 @@ struct Reduce_Data {
       tally_or_val_ptr.val_ptr = tally_or_val_ptr.list->new_value(currentStream());
       own_device_ptr = true;
     }
+    printf("returning from setupForDevice with act = %d\n",act);
     return act;
   }
 
@@ -690,6 +701,7 @@ struct ReduceAtomic_Data {
   tally_u tally_or_val_ptr;
   unsigned int* device_count;
   T* device;
+  T* tidVal;
   bool own_device_ptr;
 
   //! disallow default constructor
@@ -704,6 +716,7 @@ struct ReduceAtomic_Data {
         tally_or_val_ptr{new PinnedTally<T>},
         device_count{nullptr},
         device{nullptr},
+        tidVal(nullptr),
         own_device_ptr{false}
   {
   }
@@ -714,6 +727,7 @@ struct ReduceAtomic_Data {
         tally_or_val_ptr{other.tally_or_val_ptr},
         device_count{other.device_count},
         device{other.device},
+        tidVal{other.tidVal},
         own_device_ptr{false}
   {
   }
@@ -731,12 +745,28 @@ struct ReduceAtomic_Data {
   bool setupForDevice()
   {
     bool act = !device && setupReducers();
+    //printf("called ReduceAtomic_Data setupForDevice with act = %d\n",act);
     if (act) {
       device = device_mempool_type::getInstance().template malloc<T>(1);
       device_count = device_zeroed_mempool_type::getInstance().template malloc<unsigned int>(1);
-      tally_or_val_ptr.val_ptr = tally_or_val_ptr.list->new_value(currentStream());
+      tidVal = device_zeroed_mempool_type::getInstance().template malloc<T>(256); // Eventually pass in template arg BLOCK_SIZE
+      //tally_or_val_ptr.val_ptr = tally_or_val_ptr.list->new_value(currentStream());
+      tally_or_val_ptr.list->new_value(currentStream());
+      { //diag
+        auto n = tally_or_val_ptr.list->begin();
+        auto end = tally_or_val_ptr.list->end();
+        printf("tally begin %p : end %p\n",n,end);
+        printf("tally not using auto:  begin %p : end %p\n", tally_or_val_ptr.list->begin(),tally_or_val_ptr.list->end());
+ 
+        if(n != end) 
+          printf("tally for this %p has been advanced \n",this);
+        else
+          printf("tally n == end\n");
+      }  
+
       own_device_ptr = true;
     }
+    //printf("returning from ReduceAtomic_Data setupForDevice with act = %d\n",act);
     return act;
   }
 
@@ -745,6 +775,7 @@ struct ReduceAtomic_Data {
   RAJA_INLINE
   void teardownForDevice()
   {
+    printf("ReduceAtomic teardownForDevice\n");
     if(own_device_ptr) {
       device_mempool_type::getInstance().free(device);  device = nullptr;
       device_zeroed_mempool_type::getInstance().free(device_count);  device_count = nullptr;
@@ -763,6 +794,7 @@ struct ReduceAtomic_Data {
   RAJA_INLINE
   void deviceToHost()
   {
+    printf("ReduceAtomic_Data calling deviceToHost\n");
     auto end = tally_or_val_ptr.list->streamEnd();
     for(auto s = tally_or_val_ptr.list->streamBegin(); s != end; ++s) {
       synchronize(*s);
@@ -858,6 +890,8 @@ struct Reduce {
   //! alias for operator T()
   T get() { return operator T(); }
 
+  bool auxSetup() { return val.setupForDevice();}
+
   //! apply reduction
   RAJA_HOST_DEVICE
   Reduce &combine(T rhsVal)
@@ -930,19 +964,23 @@ struct ReduceAtomic {
 #endif
       parent->combine(val.value);
     } else {
-      val.teardownForDevice();
+      //val.teardownForDevice();
     }
 #else
     if (!parent->parent) {
+      int threadId = threadIdx.x + blockDim.x * threadIdx.y
+                 + (blockDim.x * blockDim.y) * threadIdx.z;
 
-      T temp = val.value;
+      //T temp = val.value; // CAREFUL!!!  restore original code 
+      T temp = val.tidVal[threadId]; // supports ReducerArray
+      //printf("~ReduceAtomic temp = %f\n",temp);
 
       if (impl::grid_reduce_atomic<Combiner>(temp, val.device,
                                             val.device_count)) {
         val.tally_or_val_ptr.val_ptr[0] = temp;
       }
     } else {
-      parent->combine(val.value);
+      parent->combine(val.value); //debugging remove comment
     }
 #endif
   }
@@ -950,9 +988,11 @@ struct ReduceAtomic {
   //! map result value back to host if not done already; return aggregate value
   operator T()
   {
+    printf("ReduceAtomic operator T()\n");
     auto n = val.tally_or_val_ptr.list->begin();
     auto end = val.tally_or_val_ptr.list->end();
     if (n != end) {
+      printf("ReduceAtomic operator T() n != end\n");
       val.deviceToHost();
       for ( ; n != end; ++n) {
         Combiner{}(val.value, *n);
@@ -964,11 +1004,30 @@ struct ReduceAtomic {
   //! alias for operator T()
   T get() { return operator T(); }
 
+
+  bool auxSetup() {
+    //printf("called auxSetup for %p\n",this);
+    return val.setupForDevice();
+  }
+
+  RAJA_HOST_DEVICE
+  void setParent(ReduceAtomic<Async, Combiner, T>* pValue){
+    parent = pValue;
+  }
+
   //! apply reduction
   RAJA_HOST_DEVICE
   ReduceAtomic &combine(T rhsVal)
   {
-    Combiner{}(val.value, rhsVal);
+#if !defined(__CUDA_ARCH__)
+    printf("Host ReduceAtomic combine rhsVal = %f\n",rhsVal);
+    Combiner{}(val.value, rhsVal); 
+#else
+    int threadId = threadIdx.x + blockDim.x * threadIdx.y
+                 + (blockDim.x * blockDim.y) * threadIdx.z;
+    printf("Device ReduceAtomic combine rhsVal = %f from tid %d\n",rhsVal,threadId);
+    Combiner{}(val.tidVal[threadId], rhsVal); 
+#endif
     return *this;
   }
 
@@ -976,6 +1035,7 @@ struct ReduceAtomic {
   RAJA_HOST_DEVICE
   const ReduceAtomic &combine(T rhsVal) const
   {
+    printf("ReduceAtomic const combine : rhsVal %f\n",rhsVal);
     using NonConst = typename std::remove_const<decltype(this)>::type;
     auto ptr = const_cast<NonConst>(this);
     Combiner{}(ptr->val.value,rhsVal);
@@ -1024,6 +1084,7 @@ struct ReduceSum<cuda_reduce_atomic<BLOCK_SIZE, Async>, T>
   RAJA_HOST_DEVICE
   self &operator+=(T rhsVal)
   {
+    //printf("Summing %f from reducer %p\n",rhsVal,this);
     Base::combine(rhsVal);
     return *this;
   }
