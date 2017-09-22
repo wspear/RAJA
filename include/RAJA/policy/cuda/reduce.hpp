@@ -702,6 +702,7 @@ struct ReduceAtomic_Data {
   unsigned int* device_count;
   T* device;
   T* tidVal;
+  T* pinnedVal;
   bool own_device_ptr;
 
   //! disallow default constructor
@@ -750,11 +751,14 @@ struct ReduceAtomic_Data {
       device = device_mempool_type::getInstance().template malloc<T>(1);
       device_count = device_zeroed_mempool_type::getInstance().template malloc<unsigned int>(1);
       tidVal = device_zeroed_mempool_type::getInstance().template malloc<T>(256); // Eventually pass in template arg BLOCK_SIZE
+      pinnedVal = pinned_mempool_type::getInstance().template malloc<T>(1);
       tally_or_val_ptr.val_ptr = tally_or_val_ptr.list->new_value(currentStream());
-      //tally_or_val_ptr.list->new_value(currentStream());
+
+#if 0      
       { //diag
         auto n = tally_or_val_ptr.list->begin();
         auto end = tally_or_val_ptr.list->end();
+
         printf("tally begin %p : end %p\n",n,end);
         printf("tally not using auto:  begin %p : end %p\n", tally_or_val_ptr.list->begin(),tally_or_val_ptr.list->end());
  
@@ -762,8 +766,8 @@ struct ReduceAtomic_Data {
           printf("tally for this %p has been advanced \n",this);
         else
           printf("tally n == end\n");
-      }  
-
+      }
+#endif  
       own_device_ptr = true;
     }
     //printf("returning from ReduceAtomic_Data setupForDevice with act = %d\n",act);
@@ -779,6 +783,7 @@ struct ReduceAtomic_Data {
     if(own_device_ptr) {
       device_mempool_type::getInstance().free(device);  device = nullptr;
       device_zeroed_mempool_type::getInstance().free(device_count);  device_count = nullptr;
+      pinned_mempool_type::getInstance().free(pinnedVal); pinnedVal = nullptr;
       tally_or_val_ptr.val_ptr = nullptr;
       own_device_ptr = false;
     }
@@ -977,7 +982,8 @@ struct ReduceAtomic {
 
       if (impl::grid_reduce_atomic<Combiner>(temp, val.device,
                                             val.device_count)) {
-        val.tally_or_val_ptr.val_ptr[0] = temp;
+        //val.tally_or_val_ptr.val_ptr[0] = temp;
+        *val.pinnedVal = temp;
       }
     } else {
       parent->combine(val.value); //debugging remove comment
@@ -988,9 +994,12 @@ struct ReduceAtomic {
   //! map result value back to host if not done already; return aggregate value
   operator T()
   {
-    printf("ReduceAtomic operator T()\n");
+    //printf("ReduceAtomic operator T\n");
+
+#if 0   
     auto n = val.tally_or_val_ptr.list->begin();
     auto end = val.tally_or_val_ptr.list->end();
+    printf("ReduceAtomic operator T() Tally begin %p end %p\n",n,end);
     if (n != end) {
       printf("ReduceAtomic operator T() n != end\n");
       val.deviceToHost();
@@ -1000,7 +1009,11 @@ struct ReduceAtomic {
       val.cleanup();
     }
     return val.value;
+#endif
+    return *val.pinnedVal; // debug    
   }
+
+  
   //! alias for operator T()
   T get() { return operator T(); }
 
