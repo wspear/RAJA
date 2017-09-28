@@ -536,7 +536,6 @@ public:
     Node* n = cuda::pinned_mempool_type::getInstance().template malloc<Node>(1);
     n->next = sn->node_list;
     sn->node_list = n;
-    printf("new_value begin %p : end %p\n",begin(),end());
     return &n->value;
   }
 
@@ -589,6 +588,7 @@ struct Reduce_Data {
   };
 
   mutable T value;
+  PinnedTally<T> valueList;
   tally_u tally_or_val_ptr;
   unsigned int *device_count;
   RAJA::detail::SoAPtr<T, device_mempool_type> device;
@@ -603,6 +603,7 @@ struct Reduce_Data {
    */
   explicit Reduce_Data(T initValue)
       : value{initValue},
+        valueList{new PinnedTally<T>},
         tally_or_val_ptr{new PinnedTally<T>},
         device_count{nullptr},
         device{},
@@ -613,6 +614,7 @@ struct Reduce_Data {
   RAJA_HOST_DEVICE
   Reduce_Data(const Reduce_Data &other)
       : value{Combiner::identity()},
+        valueList{other.valueList},
         tally_or_val_ptr{other.tally_or_val_ptr},
         device_count{other.device_count},
         device{other.device},
@@ -625,6 +627,7 @@ struct Reduce_Data {
   void destroy()
   {
     delete tally_or_val_ptr.list; tally_or_val_ptr.list = nullptr;
+    delete valueList; valueList = nullptr;
   }
 
   //! check and setup for device
@@ -640,6 +643,7 @@ struct Reduce_Data {
       device.allocate(numBlocks);
       device_count = device_zeroed_mempool_type::getInstance().template malloc<unsigned int>(1);
       tally_or_val_ptr.val_ptr = tally_or_val_ptr.list->new_value(currentStream());
+      valueList->new_value(currentStream());
       own_device_ptr = true;
     }
     printf("returning from setupForDevice with act = %d\n",act);
@@ -699,10 +703,11 @@ struct ReduceAtomic_Data {
 
   mutable T value;
   tally_u tally_or_val_ptr;
+  PinnedTally<T>* valueList; // supports reducerArray
   unsigned int* device_count;
   T* device;
-  T* tidVal;
-  T* pinnedVal;
+  T* tidVal; // supports reducerArray --set to Blocksize but eventually expand this to max concurreny blocks
+  T* pinnedVal; //supports reducerArray
   bool own_device_ptr;
 
   //! disallow default constructor
@@ -715,6 +720,7 @@ struct ReduceAtomic_Data {
   explicit ReduceAtomic_Data(T initValue)
       : value{initValue},
         tally_or_val_ptr{new PinnedTally<T>},
+        valueList{new PinnedTally<T>},
         device_count{nullptr},
         device{nullptr},
         tidVal(nullptr),
@@ -726,6 +732,7 @@ struct ReduceAtomic_Data {
   ReduceAtomic_Data(const ReduceAtomic_Data &other)
       : value{Combiner::identity()},
         tally_or_val_ptr{other.tally_or_val_ptr},
+        valueList{other.valueList},
         device_count{other.device_count},
         device{other.device},
         tidVal{other.tidVal},
@@ -738,6 +745,7 @@ struct ReduceAtomic_Data {
   void destroy()
   {
     delete tally_or_val_ptr.list; tally_or_val_ptr.list = nullptr;
+    delete valueList; valueList = nullptr;
   }
 
   //! check and setup for device
@@ -751,8 +759,9 @@ struct ReduceAtomic_Data {
       device = device_mempool_type::getInstance().template malloc<T>(1);
       device_count = device_zeroed_mempool_type::getInstance().template malloc<unsigned int>(1);
       tidVal = device_zeroed_mempool_type::getInstance().template malloc<T>(256); // Eventually pass in template arg BLOCK_SIZE
-      pinnedVal = pinned_mempool_type::getInstance().template malloc<T>(1);
+      //pinnedVal = pinned_mempool_type::getInstance().template malloc<T>(1);
       tally_or_val_ptr.val_ptr = tally_or_val_ptr.list->new_value(currentStream());
+      pinnedVal = valueList->new_value(currentStream());
 
 #if 0      
       { //diag
@@ -800,8 +809,15 @@ struct ReduceAtomic_Data {
   void deviceToHost()
   {
     printf("ReduceAtomic_Data calling deviceToHost\n");
+// temp diable  orig code
+#if 0
     auto end = tally_or_val_ptr.list->streamEnd();
     for(auto s = tally_or_val_ptr.list->streamBegin(); s != end; ++s) {
+      synchronize(*s);
+    }
+#endif    
+    auto end = valueList->streamEnd();
+    for(auto s = valueList->streamBegin(); s != end; ++s) {
       synchronize(*s);
     }
   }
@@ -812,6 +828,7 @@ struct ReduceAtomic_Data {
   void cleanup()
   {
     tally_or_val_ptr.list->free_list();
+    valueList->free_list();
   }
 };
 
@@ -1010,7 +1027,19 @@ struct ReduceAtomic {
     }
     return val.value;
 #endif
-    return *val.pinnedVal; // debug    
+    auto n = val.valueList->begin();
+    auto end = val.valueList->end();
+    printf("ReduceAtomic operator T() Tally begin %p end %p\n",n,end);
+    if (n != end) {
+      printf("ReduceAtomic operator T() n != end\n");
+      val.deviceToHost();
+      for ( ; n != end; ++n) {
+        Combiner{}(val.value, *n);
+      }
+      val.cleanup();
+    }
+    return val.value;
+    //return *val.pinnedVal; // debug    
   }
 
   
