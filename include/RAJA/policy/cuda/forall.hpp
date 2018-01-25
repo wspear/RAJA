@@ -57,8 +57,48 @@ namespace policy
 namespace cuda
 {
 
+
+enum struct GridStrideMode : int {
+  disabled,
+  static_size,
+  occupancy_size
+};
+
+RAJA_INLINE
+GridStrideMode& getGridStrideMode()
+{
+  static GridStrideMode mode = GridStrideMode::disabled;
+  return mode;
+}
+
+RAJA_INLINE
+cudaStream_t& stream()
+{
+  static cudaStream_t stream = 0;
+  return stream;
+}
+
 namespace impl
 {
+
+
+RAJA_INLINE
+int getNumSm(int device)
+{
+  int numSm;
+  cudaErrchk(cudaDeviceGetAttribute(&numSm, cudaDevAttrMultiProcessorCount, device));
+  return numSm;
+}
+
+template <typename Func>
+RAJA_INLINE
+int getNumBlocksPerSm(Func func, size_t block_size, size_t dynSmem)
+{
+  int numBlocksPerSm;
+  cudaErrchk(cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(
+      &numBlocksPerSm, func, block_size, dynSmem, cudaOccupancyDefault));
+  return numBlocksPerSm;
+}
 
 /*!
  ******************************************************************************
@@ -67,6 +107,8 @@ namespace impl
  *
  ******************************************************************************
  */
+#if 0 // original
+
 RAJA_INLINE
 dim3 getGridDim(size_t len, dim3 blockDim)
 {
@@ -76,6 +118,38 @@ dim3 getGridDim(size_t len, dim3 blockDim)
 
   return gridSize;
 }
+
+#endif
+
+
+template <typename Func>
+RAJA_INLINE
+dim3 getGridDim(Func func, size_t len, dim3 blockDim, size_t dynSmem)
+{
+  size_t block_size = blockDim.x * blockDim.y * blockDim.z;
+  size_t gridSize = (len + block_size-1) / block_size;
+
+  if (getGridStrideMode() != GridStrideMode::disabled) {
+    static int numSm = getNumSm(0);
+
+    int numBlocksPerSm = 1;
+    if (getGridStrideMode() == GridStrideMode::static_size) {
+      numBlocksPerSm = (2048/block_size);
+    } else if (getGridStrideMode() == GridStrideMode::occupancy_size) {
+      static int bpsm = getNumBlocksPerSm(func, block_size, dynSmem);
+      numBlocksPerSm = bpsm;
+    } else {
+      printf("Unknown grid stride mode\n");
+    }
+
+    size_t max_concurrent_blocks = numSm * numBlocksPerSm;
+
+    return std::min(gridSize, max_concurrent_blocks);
+  }
+
+  return gridSize;
+}
+
 
 /*!
  ******************************************************************************
@@ -152,6 +226,28 @@ __launch_bounds__(BlockSize, 1) __global__
   }
 }
 
+/*!
+ ******************************************************************************
+ *
+ * \brief  CUDA kernal forall template for indirection array using grid-stride.
+ *
+ ******************************************************************************
+ */
+template <size_t BlockSize, typename Iterator, typename LOOP_BODY, typename IndexType>
+__launch_bounds__ (BlockSize, 1)
+__global__ void forall_cuda_kernel_gridstride(LOOP_BODY loop_body,
+                                   const Iterator idx,
+                                   IndexType length)
+{
+  auto body = loop_body;
+  auto ii = static_cast<IndexType>(getGlobalIdx_1D_1D());
+  auto gridThreads = static_cast<IndexType>(getGlobalNumThreads_1D_1D());
+  for (;ii < length;ii+=gridThreads) {
+    body(idx[ii]);
+  }
+}
+
+
 }  // end impl namespace
 
 //
@@ -161,7 +257,7 @@ __launch_bounds__(BlockSize, 1) __global__
 //
 ////////////////////////////////////////////////////////////////////////
 //
-
+#if 0 // original
 template <typename Iterable, typename LoopBody, size_t BlockSize, bool Async>
 RAJA_INLINE void forall_impl(cuda_exec<BlockSize, Async>,
                              Iterable&& iter,
@@ -193,6 +289,67 @@ RAJA_INLINE void forall_impl(cuda_exec<BlockSize, Async>,
     RAJA_FT_END;
   }
 }
+#endif
+
+
+
+template <typename Iterable, typename LoopBody, size_t BlockSize, bool Async>
+RAJA_INLINE void forall_impl(cuda_exec<BlockSize, Async>,
+                        Iterable&& iter,
+                        LoopBody&& loop_body)
+{
+  auto begin = std::begin(iter);
+  auto end   = std::end(iter);
+
+  auto len = std::distance(begin, end);
+
+  if (len > 0 && BlockSize > 0) {
+
+    size_t dynSmem = 0;
+    cudaStream_t stream = cuda::stream();
+
+    RAJA_FT_BEGIN;
+
+    if (cuda::getGridStrideMode() == cuda::GridStrideMode::disabled) {
+      auto func = cuda::impl::forall_cuda_kernel<
+          BlockSize,
+          typename std::remove_reference<decltype(begin)>::type,
+          typename std::remove_reference<decltype(loop_body)>::type,
+          typename std::remove_reference<decltype(len)>::type>;
+
+      auto gridSize = cuda::impl::getGridDim(func, len, BlockSize, dynSmem);
+
+
+      func<<<gridSize, BlockSize, dynSmem, stream>>>(
+          RAJA::cuda::make_launch_body(gridSize, BlockSize, dynSmem, stream,
+                                 std::forward<LoopBody>(loop_body)),
+          std::move(begin), len);
+
+    } else {
+      auto func = cuda::impl::forall_cuda_kernel_gridstride<
+          BlockSize,
+          typename std::remove_reference<decltype(begin)>::type,
+          typename std::remove_reference<decltype(loop_body)>::type,
+          typename std::remove_reference<decltype(len)>::type>;
+
+      auto gridSize = cuda::impl::getGridDim(func, len, BlockSize, dynSmem);
+
+
+      func<<<gridSize, BlockSize, dynSmem, stream>>>(
+          RAJA::cuda::make_launch_body(gridSize, BlockSize, dynSmem, stream,
+                                 std::forward<LoopBody>(loop_body)),
+          std::move(begin), len);
+
+    }
+    RAJA::cuda::peekAtLastError();
+
+    RAJA::cuda::launch(stream);
+    if (!Async) RAJA::cuda::synchronize(stream);
+
+    RAJA_FT_END;
+  }
+}
+
 
 
 //
