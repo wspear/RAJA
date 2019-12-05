@@ -91,4 +91,8 @@ if(ENABLE_TARGET_OPENMP)
     SOURCES omp-target-ltimes.cpp)
 endif()
 
+raja_add_executable(
+  NAME loop
+  SOURCES loops.cpp)
+
 add_subdirectory(plugin)
