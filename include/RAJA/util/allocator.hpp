@@ -10,28 +10,17 @@ namespace RAJA
 namespace util
 {
 
-template <typename T>
-  constexpr int val(T t)
-{
-    return static_cast<int>(t);
-}
-
-template<int platform>
-struct allocator_impl
-{
-};
-
 template<>
-struct allocator_impl<val(Platform::host)>
+struct allocator<Platform::host>
 {
   template <typename T>
-  T *allocate(std::size_t size)
+  static T *allocate(std::size_t size)
   {
     return new T[size];
   }
 
   template <typename T>
-  void deallocate(T* &ptr)
+  static void deallocate(T* &ptr)
   {
     if (ptr) {
       delete[] ptr;
@@ -40,7 +29,7 @@ struct allocator_impl<val(Platform::host)>
   }
 
   template <typename T>
-  T* get(T* ptr, std::size_t)
+  static T* get(T* ptr, std::size_t)
   {
     return ptr;
   }
@@ -48,10 +37,10 @@ struct allocator_impl<val(Platform::host)>
 
 #if defined(RAJA_ENABLE_CUDA)
 template<>
-struct allocator_impl<val(Platform::cuda)>
+struct allocator<Platform::cuda>
 {
   template <typename T>
-  T *allocate(std::size_t size)
+  static T *allocate(std::size_t size)
   {
     T* ptr;
     cudaErrchk(cudaMallocManaged(
@@ -62,7 +51,7 @@ struct allocator_impl<val(Platform::cuda)>
   }
 
   template <typename T>
-  void deallocate(T* &ptr)
+  static void deallocate(T* &ptr)
   {
     if (ptr) {
       cudaErrchk(cudaFree(ptr));
@@ -71,7 +60,7 @@ struct allocator_impl<val(Platform::cuda)>
   }
 
   template <typename T>
-  T* get(T* ptr, std::size_t size)
+  static T* get(T* ptr, std::size_t size)
   {
     T* ret = new T[size];
     cudaErrchk(
@@ -83,10 +72,10 @@ struct allocator_impl<val(Platform::cuda)>
 
 #if defined(RAJA_ENABLE_OPENMP_TARGET)
 template<>
-struct allocator_impl<val(Platform::omp_target)>
+struct allocator<Platform::omp_target>
 {
   template <typename T>
-  T *allocate(std::size_t size)
+  static T *allocate(std::size_t size)
   {
     int id = omp_get_default_device();
     T* ptr = static_cast<T>(omp_target_alloc(len * sizeof(T), id));
@@ -94,7 +83,7 @@ struct allocator_impl<val(Platform::omp_target)>
   }
 
   template <typename T>
-  void deallocate(T* &ptr)
+  static void deallocate(T* &ptr)
   {
     if (ptr) {
       int id = omp_get_default_device();
@@ -104,7 +93,7 @@ struct allocator_impl<val(Platform::omp_target)>
   }
 
   template <typename T>
-  T* get(T* ptr, std::size_t size)
+  static T* get(T* ptr, std::size_t size)
   {
     int hid = omp_get_initial_device();
     int did = omp_get_default_device();
@@ -119,8 +108,6 @@ struct allocator_impl<val(Platform::omp_target)>
 #endif
 
 }
-
-//using allocator = allocator_impl<val()>;
 }
 
 #endif

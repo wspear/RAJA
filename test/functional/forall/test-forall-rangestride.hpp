@@ -5,8 +5,8 @@
 // SPDX-License-Identifier: (BSD-3-Clause)
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~//
 
-#ifndef RAJA_test-forall-rangestride_HPP
-#define RAJA_test-forall-rangestride_HPP
+#ifndef RAJA_test_forall_rangestride_HPP
+#define RAJA_test_forall_rangestride_HPP
 
 #include <cstdlib>
 #include <string>
@@ -16,23 +16,25 @@
 
 constexpr std::size_t LENGTH{1024};
 
-template <typename Policy>
+template <typename TestPolicy>
 class ForallRangeStrideFunctionalTest : public ::testing::Test
 {
+  using Allocator = RAJA::util::allocator< 
+    //RAJA::Platform::host
+    RAJA::detail::get_platform<TestPolicy>::value >;
+
 protected:
   virtual void SetUp()
   {
-    using allocator = RAJA::util::allocator<get_platform<Policy>::value>;
-
-    array = allocator::allocate<int>(LENGTH);
-    for (Index_type i = 0; i < alen; ++i) {
+    array = Allocator::allocate<int>(LENGTH);
+    for (RAJA::Index_type i = 0; i < LENGTH; ++i) {
       array[i] = rand() % 65536;
     }
   }
 
   virtual void TearDown()
   {
-    allocator::deallocate(array);
+    Allocator::deallocate(array);
   }
 
   int* array;
@@ -44,14 +46,14 @@ TYPED_TEST_P(ForallRangeStrideFunctionalTest, ForallUnitStride)
 {
   RAJA::RangeStrideSegment seg{0, LENGTH, 1};
 
-  RAJA::forall<TypeParam>(seg, [=](Index_type idx) {
+  RAJA::forall<TypeParam>(seg, [=](RAJA::Index_type idx) {
     this->array[idx] = idx;
   });
 
-  int* result = allocator::get(this->array);
+  int* result = Allocator::get(this->array);
 
-  for (Index_type i = 0; i < LENGTH; ++i) {
-    EXPECT_EQ(result, i);
+  for (RAJA::Index_type i = 0; i < LENGTH; ++i) {
+    EXPECT_EQ(result[i], i);
   }
 }
 
@@ -59,14 +61,14 @@ TYPED_TEST_P(ForallRangeStrideFunctionalTest, ForallUnitNegativeStride)
 {
   RAJA::RangeStrideSegment seg{LENGTH-1, -1, -11};
 
-  RAJA::forall<TypeParam>(seg, [=](Index_type idx) {
+  RAJA::forall<TypeParam>(seg, [=](RAJA::Index_type idx) {
     this->array[idx] = idx;
   });
 
-  int* result = allocator::get(this->array);
+  int* result = Allocator::get(this->array);
 
-  for (Index_type i = 0; i < LENGTH; ++i) {
-    EXPECT_EQ(result, i);
+  for (RAJA::Index_type i = 0; i < LENGTH; ++i) {
+    EXPECT_EQ(result[i], i);
   }
 }
 
