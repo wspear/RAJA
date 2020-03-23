@@ -9,5 +9,5 @@
 /// Header file of value parameter macros for tests.
 ///
 
-#define tenk 10000
-#define hundredk 100000
+constexpr int tenk = 10000;
+constexpr int hundredk = 100000;
