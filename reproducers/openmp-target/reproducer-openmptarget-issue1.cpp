@@ -312,22 +312,6 @@ int main(int RAJA_UNUSED_ARG(argc), char **RAJA_UNUSED_ARG(argv[]))
 
 ////////////////////////////////////////////
 ////////////////////////////////////////////
-//
-// ISSUE #1
-//
-// The following two kernels show the issue. They hang at runtime.
-//
-// The kernell policy has an OpenMP target outer loop and a sequential
-// innder loop. There is no loop collapse, which works as shown by the
-// kernels above. Similar kernels using OpenMP (no target) work and
-// are included above.
-//
-// Note that the OpenMP exec policy used here works in RAJA::kernel where
-// there is no inner loop (i.e., only one loop). An example of this is
-// in the reproducer-openmptarget.cpp file.
-//
-////////////////////////////////////////////
-////////////////////////////////////////////
 
   std::cout << "\n RAJA OpenMP target 2D matrix init (no collapse)...\n";
 
