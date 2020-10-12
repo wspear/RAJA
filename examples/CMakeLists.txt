@@ -98,6 +98,10 @@ raja_add_executable(
   SOURCES ltimes.cpp)
 
 raja_add_executable(
+  NAME matrix_transpose-teams-demo
+  SOURCES matrix_transpose-teams-demo.cpp)
+
+raja_add_executable(
   NAME multiview
   SOURCES multiview.cpp)
 
