@@ -121,10 +121,18 @@ void ForallListSegmentOffsetViewTestImpl(INDEX_TYPE N, INDEX_TYPE offset)
 
   using layout_type = RAJA::OffsetLayout<1, INDEX_TYPE>;
   using view_type = RAJA::View< INDEX_TYPE, layout_type >;
-  static_assert(std::is_trivially_copyable<layout_type>::value,
+  // workaround missing "is_trivially_copyable" in g++ < 5.0
+#if _GLIBCXX_RELEASE >= 20150716
+  #if (__GNUG__ && __GNUC__ < 5) ||
+  #define IS_TRIVIALLY_COPYABLE(T) __has_trivial_copy(T)
+  #else
+  #define IS_TRIVIALLY_COPYABLE(T) std::is_trivially_copyable<T>::value
+  #endif
+  static_assert(IS_TRIVIALLY_COPYABLE(layout_type),
                 "These layouts should always be triviallly constructible");
-  static_assert(std::is_trivially_copyable<view_type>::value,
+  static_assert(IS_TRIVIALLY_COPYABLE(view_type),
                 "These views should always be triviallly constructible");
+#endif
 
   INDEX_TYPE N_offset = N + offset;
   view_type work_view(working_array, 
