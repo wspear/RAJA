@@ -52,8 +52,8 @@ struct IndexValue : public IndexValueBase {
   RAJA_INLINE constexpr IndexValue() = default;
   constexpr RAJA_INLINE IndexValue(IndexValue const &) = default;
   constexpr RAJA_INLINE IndexValue(IndexValue &&) = default;
-  constexpr RAJA_INLINE IndexValue &operator=(IndexValue const &) = default;
-  constexpr RAJA_INLINE IndexValue &operator=(IndexValue &&) = default;
+  RAJA_INLINE IndexValue &operator=(IndexValue const &) = default;
+  RAJA_INLINE IndexValue &operator=(IndexValue &&) = default;
 
   /*!
    * \brief Explicit constructor.

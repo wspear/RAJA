@@ -61,8 +61,8 @@ struct OffsetLayout_impl<camp::idx_seq<RangeInts...>, IdxLin> {
   constexpr RAJA_INLINE OffsetLayout_impl() = default;
   constexpr RAJA_INLINE OffsetLayout_impl(Self const&) = default;
   constexpr RAJA_INLINE OffsetLayout_impl(Self &&) = default;
-  constexpr RAJA_INLINE OffsetLayout_impl& operator=(Self const&) = default;
-  constexpr RAJA_INLINE OffsetLayout_impl& operator=(Self &&) = default;
+  RAJA_INLINE OffsetLayout_impl& operator=(Self const&) = default;
+  RAJA_INLINE OffsetLayout_impl& operator=(Self &&) = default;
 
   void shift(std::array<IdxLin, sizeof...(RangeInts)> shift)
   {

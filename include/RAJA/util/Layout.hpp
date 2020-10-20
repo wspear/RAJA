@@ -118,10 +118,8 @@ public:
   constexpr RAJA_INLINE LayoutBase_impl() = default;
   constexpr RAJA_INLINE LayoutBase_impl(LayoutBase_impl const &) = default;
   constexpr RAJA_INLINE LayoutBase_impl(LayoutBase_impl &&) = default;
-  constexpr RAJA_INLINE LayoutBase_impl &operator=(LayoutBase_impl const &) =
-      default;
-  constexpr RAJA_INLINE LayoutBase_impl &operator=(LayoutBase_impl &&) =
-      default;
+  RAJA_INLINE LayoutBase_impl &operator=(LayoutBase_impl const &) = default;
+  RAJA_INLINE LayoutBase_impl &operator=(LayoutBase_impl &&) = default;
 
   /*!
    * Construct a layout given the size of each dimension.
