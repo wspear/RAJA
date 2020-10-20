@@ -42,7 +42,7 @@ struct OffsetLayout_impl;
 
 template <camp::idx_t... RangeInts, typename IdxLin>
 struct OffsetLayout_impl<camp::idx_seq<RangeInts...>, IdxLin> {
-  using Self = OffsetLayout_impl<camp::idx_seq<RangeInts...>, IdxLin>;
+  using Self = OffsetLayout_impl;
   using IndexRange = camp::idx_seq<RangeInts...>;
   using Base = RAJA::detail::LayoutBase_impl<IndexRange, IdxLin>;
   Base base_;
@@ -58,10 +58,11 @@ struct OffsetLayout_impl<camp::idx_seq<RangeInts...>, IdxLin> {
   {
   }
 
-  constexpr RAJA_INLINE RAJA_HOST_DEVICE OffsetLayout_impl(Self const& c)
-      : base_(c.base_), offsets{c.offsets[RangeInts]...}
-  {
-  }
+  constexpr RAJA_INLINE OffsetLayout_impl() = default;
+  constexpr RAJA_INLINE OffsetLayout_impl(Self const&) = default;
+  constexpr RAJA_INLINE OffsetLayout_impl(Self &&) = default;
+  constexpr RAJA_INLINE OffsetLayout_impl& operator=(Self const&) = default;
+  constexpr RAJA_INLINE OffsetLayout_impl& operator=(Self &&) = default;
 
   void shift(std::array<IdxLin, sizeof...(RangeInts)> shift)
   {
